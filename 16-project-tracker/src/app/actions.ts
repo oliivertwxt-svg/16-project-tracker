@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { sql } from "@/lib/db";
 import { ProjectInput, TaskInput, taskStatusSchema } from "@/lib/validation";
-import { auth } from "@/auth";
+import { requireUser } from "@/lib/session";
 
 export type ActionResult = {
   ok: boolean;
@@ -14,14 +14,6 @@ export type ActionResult = {
 
 const idSchema = z.coerce.number().int().positive();
 
-async function requireUserId(): Promise<number> {
-  const session = await auth();
-  if (!session?.user?.id) {
-    throw new Error("You must be signed in");
-  }
-  return session.user.id;
-}
-
 function fieldErrors(error: z.ZodError): Record<string, string[]> {
   return error.flatten().fieldErrors as Record<string, string[]>;
 }
@@ -30,7 +22,7 @@ export async function createProject(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
-  const ownerId = await requireUserId();
+  const { id: ownerId } = await requireUser();
   const parsed = ProjectInput.safeParse({
     name: formData.get("name"),
     description: formData.get("description"),
@@ -54,7 +46,7 @@ export async function createTask(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
-  const ownerId = await requireUserId();
+  const { id: ownerId } = await requireUser();
   const projectIdResult = idSchema.safeParse(formData.get("project_id"));
   const parsed = TaskInput.safeParse({
     title: formData.get("title"),
@@ -105,7 +97,7 @@ export async function updateTaskStatus(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
-  const ownerId = await requireUserId();
+  const { id: ownerId } = await requireUser();
   const ids = z
     .object({
       task_id: idSchema,
@@ -153,7 +145,7 @@ export async function deleteTask(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
-  const ownerId = await requireUserId();
+  const { id: ownerId } = await requireUser();
   const ids = z
     .object({
       task_id: idSchema,
@@ -196,7 +188,7 @@ export async function deleteProject(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
-  const ownerId = await requireUserId();
+  const { id: ownerId } = await requireUser();
   const projectId = idSchema.safeParse(formData.get("project_id"));
 
   if (!projectId.success) {

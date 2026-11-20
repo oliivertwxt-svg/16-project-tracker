@@ -2,16 +2,12 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { getProjects } from "@/lib/queries";
 import { NewProjectForm } from "./components/new-project-form";
-import { auth } from "@/auth";
-import { redirect } from "next/navigation";
+import { requireUser } from "@/lib/session";
 
 export default async function Home() {
+  const user = await requireUser();
   await connection();
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
-  const projects = await getProjects(session.user.id);
+  const projects = await getProjects(user.id);
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12">

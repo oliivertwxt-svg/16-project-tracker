@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { getTrackerStats } from "@/lib/queries";
-import { auth } from "@/auth";
-import { redirect } from "next/navigation";
+import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "Stats",
@@ -54,12 +53,9 @@ function BarChart({
 }
 
 export default async function StatsPage() {
+  const user = await requireUser();
   await connection();
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
-  const stats = await getTrackerStats(session.user.id);
+  const stats = await getTrackerStats(user.id);
   const summaryCards = [
     { label: "Projects", value: stats.totals.projects },
     { label: "Tasks", value: stats.totals.tasks },

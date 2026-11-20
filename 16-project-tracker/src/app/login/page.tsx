@@ -1,10 +1,35 @@
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/auth";
 
-export default async function LoginPage() {
+function safeCallbackUrl(value: string | string[] | undefined): string {
+  if (
+    typeof value !== "string" ||
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    value.includes("\\") ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    return "/";
+  }
+
+  const url = new URL(value, "http://localhost");
+  if (url.origin !== "http://localhost") {
+    return "/";
+  }
+
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+type LoginPageProps = {
+  searchParams: Promise<{ callbackUrl?: string | string[] }>;
+};
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const { callbackUrl: rawCallbackUrl } = await searchParams;
+  const callbackUrl = safeCallbackUrl(rawCallbackUrl);
   const session = await auth();
   if (session?.user) {
-    redirect("/");
+    redirect(callbackUrl);
   }
 
   return (
@@ -22,7 +47,7 @@ export default async function LoginPage() {
         <form
           action={async () => {
             "use server";
-            await signIn("github", { redirectTo: "/" });
+            await signIn("github", { redirectTo: callbackUrl });
           }}
         >
           <button

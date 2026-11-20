@@ -39,8 +39,10 @@ and the Kanban board uses `useOptimistic` for status changes.
    Copy-Item .env.example .env.local
    ```
 
-3. Set `DATABASE_URL` in `.env.local` to the Neon connection string. Keep this
-   value private and do not commit `.env.local`.
+3. Set `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GITHUB_ID`, and
+   `AUTH_GITHUB_SECRET` in `.env.local`. Register
+   `http://localhost:3000/api/auth/callback/github` as the GitHub OAuth
+   callback URL. Keep credentials private and do not commit `.env.local`.
 4. Create the tables using the schema below.
 5. Install dependencies and start the development server:
 
@@ -54,17 +56,40 @@ and the Kanban board uses `useOptimistic` for status changes.
 Run checks with `npm run lint` and `npm run build`. A valid `DATABASE_URL` must
 be present when running the app.
 
+## Authentication
+
+GitHub sign-in is handled by Auth.js. Middleware redirects unauthenticated
+requests to `/login` and saves the requested path as `callbackUrl`. After
+GitHub redirects back to the Auth.js callback, the app verifies that the return
+path is relative before redirecting, then Auth.js issues the session cookie.
+
+Pages and data-changing Server Actions also call `requireUser()` themselves.
+Middleware is a useful first gate, but it is not an authorization boundary for
+Server Actions: actions can be invoked directly, outside the expected page
+navigation flow. Checking the session again at the server entry point ensures
+each read or mutation has an authenticated user ID; database queries also
+scope projects to that owner.
+
 ## Database schema
 
 The application expects a `projects` table and a `tasks` table with the
 following columns and constraints:
 
 ```sql
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  github_id TEXT NOT NULL UNIQUE,
+  name TEXT,
+  email TEXT,
+  image TEXT
+);
+
 CREATE TABLE projects (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT,
   color TEXT NOT NULL,
+  owner_id INTEGER NOT NULL REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
