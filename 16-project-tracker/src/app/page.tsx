@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { getProjects } from "@/lib/queries";
+import { NewProjectForm } from "./components/new-project-form";
 
 export default async function Home() {
   const projects = await getProjects();
@@ -11,6 +13,8 @@ export default async function Home() {
           Projects
         </h1>
       </header>
+
+      <NewProjectForm />
 
       {projects.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-zinc-300 p-10 text-center text-zinc-500">
@@ -35,7 +39,12 @@ export default async function Home() {
                 />
                 <div className="p-5">
                   <h2 className="text-lg font-semibold text-zinc-950">
-                    {project.name}
+                    <Link
+                      href={`/projects/${project.id}`}
+                      className="hover:underline"
+                    >
+                      {project.name}
+                    </Link>
                   </h2>
                   <p className="mt-2 min-h-12 text-sm leading-6 text-zinc-600">
                     {project.description || "No description"}
