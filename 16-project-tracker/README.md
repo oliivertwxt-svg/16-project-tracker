@@ -106,3 +106,15 @@ CREATE TABLE tasks (
 
 `src/lib/queries.ts` contains the SELECT queries and aggregate statistics.
 `src/app/actions.ts` contains the validated writes.
+
+For an existing database with ownerless projects, run this one-off backfill
+before enforcing `owner_id NOT NULL`. Replace the value with the GitHub account
+ID returned by GitHub OAuth (not the OAuth application's client ID):
+
+```sql
+UPDATE projects AS p
+SET owner_id = u.id
+FROM users AS u
+WHERE p.owner_id IS NULL
+  AND u.github_id = '<YOUR_GITHUB_ACCOUNT_ID>';
+```

@@ -22,7 +22,7 @@ export async function createProject(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
-  const { id: ownerId } = await requireUser();
+  const { id: userId } = await requireUser();
   const parsed = ProjectInput.safeParse({
     name: formData.get("name"),
     description: formData.get("description"),
@@ -35,7 +35,7 @@ export async function createProject(
 
   await sql`
     INSERT INTO projects (name, description, color, owner_id)
-    VALUES (${parsed.data.name}, ${parsed.data.description}, ${parsed.data.color}, ${ownerId})
+    VALUES (${parsed.data.name}, ${parsed.data.description}, ${parsed.data.color}, ${userId})
   `;
 
   revalidatePath("/");
@@ -46,7 +46,7 @@ export async function createTask(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
-  const { id: ownerId } = await requireUser();
+  const { id: userId } = await requireUser();
   const projectIdResult = idSchema.safeParse(formData.get("project_id"));
   const parsed = TaskInput.safeParse({
     title: formData.get("title"),
@@ -65,28 +65,25 @@ export async function createTask(
     return { ok: false, errors: fieldErrors(parsed.error) };
   }
 
-  const projects = await sql`
-    SELECT id FROM projects
-    WHERE id = ${projectIdResult.data} AND owner_id = ${ownerId}
-    LIMIT 1
-  `;
-  if (projects.length === 0) {
-    return {
-      ok: false,
-      errors: { project_id: ["Project does not exist"] },
-    };
-  }
-
-  await sql`
+  const inserted = await sql`
     INSERT INTO tasks (project_id, title, status, priority, due_date)
-    VALUES (
-      ${projectIdResult.data},
+    SELECT
+      projects.id,
       ${parsed.data.title},
       ${parsed.data.status},
       ${parsed.data.priority},
       ${parsed.data.due_date}
-    )
+    FROM projects
+    WHERE projects.id = ${projectIdResult.data}
+      AND projects.owner_id = ${userId}
+    RETURNING id
   `;
+  if (inserted.length === 0) {
+    return {
+      ok: false,
+      errors: { project_id: ["Project does not exist or is not accessible"] },
+    };
+  }
 
   revalidatePath(`/projects/${projectIdResult.data}`);
   revalidatePath("/");
@@ -97,7 +94,7 @@ export async function updateTaskStatus(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
-  const { id: ownerId } = await requireUser();
+  const { id: userId } = await requireUser();
   const ids = z
     .object({
       task_id: idSchema,
@@ -119,14 +116,12 @@ export async function updateTaskStatus(
   const result = await sql`
     UPDATE tasks
     SET status = ${status.data}
-    WHERE id = ${ids.data.task_id}
-      AND project_id = ${ids.data.project_id}
-      AND EXISTS (
-        SELECT 1 FROM projects
-        WHERE projects.id = ${ids.data.project_id}
-          AND projects.owner_id = ${ownerId}
-      )
-    RETURNING id
+    FROM projects
+    WHERE tasks.id = ${ids.data.task_id}
+      AND tasks.project_id = ${ids.data.project_id}
+      AND tasks.project_id = projects.id
+      AND projects.owner_id = ${userId}
+    RETURNING tasks.id
   `;
 
   if (result.length === 0) {
@@ -145,7 +140,7 @@ export async function deleteTask(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
-  const { id: ownerId } = await requireUser();
+  const { id: userId } = await requireUser();
   const ids = z
     .object({
       task_id: idSchema,
@@ -162,14 +157,12 @@ export async function deleteTask(
 
   const result = await sql`
     DELETE FROM tasks
-    WHERE id = ${ids.data.task_id}
-      AND project_id = ${ids.data.project_id}
-      AND EXISTS (
-        SELECT 1 FROM projects
-        WHERE projects.id = ${ids.data.project_id}
-          AND projects.owner_id = ${ownerId}
-      )
-    RETURNING id
+    USING projects
+    WHERE tasks.id = ${ids.data.task_id}
+      AND tasks.project_id = ${ids.data.project_id}
+      AND tasks.project_id = projects.id
+      AND projects.owner_id = ${userId}
+    RETURNING tasks.id
   `;
 
   if (result.length === 0) {
@@ -188,7 +181,7 @@ export async function deleteProject(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
-  const { id: ownerId } = await requireUser();
+  const { id: userId } = await requireUser();
   const projectId = idSchema.safeParse(formData.get("project_id"));
 
   if (!projectId.success) {
@@ -197,7 +190,7 @@ export async function deleteProject(
 
   const result = await sql`
     DELETE FROM projects
-    WHERE id = ${projectId.data} AND owner_id = ${ownerId}
+    WHERE id = ${projectId.data} AND owner_id = ${userId}
     RETURNING id
   `;
   if (result.length === 0) {

@@ -121,11 +121,11 @@ const statsDetailRowSchema = z.discriminatedUnion("row_type", [
   }),
 ]);
 
-export async function getTrackerStats(ownerId: number): Promise<TrackerStats> {
+export async function getTrackerStats(userId: number): Promise<TrackerStats> {
   const [totalsRows, detailsRows] = await Promise.all([
     sql`
       SELECT
-        (SELECT COUNT(*) FROM projects WHERE owner_id = ${ownerId})::int AS total_projects,
+        (SELECT COUNT(*) FROM projects WHERE owner_id = ${userId})::int AS total_projects,
         COUNT(t.id)::int AS total_tasks,
         COUNT(*) FILTER (WHERE t.status = 'todo')::int AS todo_tasks,
         COUNT(*) FILTER (WHERE t.status = 'doing')::int AS doing_tasks,
@@ -137,8 +137,9 @@ export async function getTrackerStats(ownerId: number): Promise<TrackerStats> {
           WHERE t.due_date < CURRENT_DATE AND t.status <> 'done'
         )::int AS overdue_tasks
       FROM tasks AS t
-      INNER JOIN projects AS p ON p.id = t.project_id
-      WHERE p.owner_id = ${ownerId}
+      INNER JOIN projects AS p
+        ON p.id = t.project_id
+        AND p.owner_id = ${userId}
     `,
     sql`
       SELECT
@@ -159,7 +160,7 @@ export async function getTrackerStats(ownerId: number): Promise<TrackerStats> {
         NULL::text AS due_date
       FROM projects AS p
       LEFT JOIN tasks AS t ON t.project_id = p.id
-      WHERE p.owner_id = ${ownerId}
+      WHERE p.owner_id = ${userId}
       GROUP BY p.id, p.name
 
       UNION ALL
@@ -176,10 +177,11 @@ export async function getTrackerStats(ownerId: number): Promise<TrackerStats> {
         t.priority::text AS task_priority,
         t.due_date::text AS due_date
       FROM tasks AS t
-      INNER JOIN projects AS p ON p.id = t.project_id
+      INNER JOIN projects AS p
+        ON p.id = t.project_id
+        AND p.owner_id = ${userId}
       WHERE t.due_date < CURRENT_DATE
         AND t.status <> 'done'
-        AND p.owner_id = ${ownerId}
       ORDER BY row_type, project_name, due_date
     `,
   ]);
@@ -221,7 +223,7 @@ export async function getTrackerStats(ownerId: number): Promise<TrackerStats> {
   };
 }
 
-export async function getProjects(ownerId: number): Promise<ProjectWithProgress[]> {
+export async function getProjects(userId: number): Promise<ProjectWithProgress[]> {
   const rows = await sql`
     SELECT
       p.id,
@@ -233,7 +235,7 @@ export async function getProjects(ownerId: number): Promise<ProjectWithProgress[
       COUNT(t.id) FILTER (WHERE t.status = 'done') AS done_tasks
     FROM projects AS p
     LEFT JOIN tasks AS t ON t.project_id = p.id
-    WHERE p.owner_id = ${ownerId}
+    WHERE p.owner_id = ${userId}
     GROUP BY p.id, p.name, p.description, p.color, p.created_at
     ORDER BY p.created_at DESC
   `;
@@ -252,11 +254,11 @@ export async function getProjects(ownerId: number): Promise<ProjectWithProgress[
   });
 }
 
-export async function getProject(ownerId: number, id: number): Promise<Project | null> {
+export async function getProject(userId: number, id: number): Promise<Project | null> {
   const rows = await sql`
     SELECT id, name, description, color, created_at
     FROM projects
-    WHERE id = ${id} AND owner_id = ${ownerId}
+    WHERE id = ${id} AND owner_id = ${userId}
     LIMIT 1
   `;
 
@@ -275,7 +277,7 @@ export async function getProject(ownerId: number, id: number): Promise<Project |
 }
 
 export async function getTasks(
-  ownerId: number,
+  userId: number,
   projectId: number,
   filters: TaskFilters = {},
 ): Promise<Task[]> {
@@ -284,24 +286,22 @@ export async function getTasks(
   const searchPattern = filters.q ? `%${filters.q}%` : null;
   const rows = await sql`
     SELECT
-      id,
-      project_id,
-      title,
-      status,
-      priority,
-      due_date::text AS due_date,
-      created_at
-    FROM tasks
-    WHERE project_id = ${projectId}
-      AND EXISTS (
-        SELECT 1 FROM projects
-        WHERE projects.id = ${projectId}
-          AND projects.owner_id = ${ownerId}
-      )
-      AND (${status}::text IS NULL OR status = ${status})
-      AND (${priority}::text IS NULL OR priority = ${priority})
-      AND (${searchPattern}::text IS NULL OR title ILIKE ${searchPattern})
-    ORDER BY created_at DESC
+      t.id,
+      t.project_id,
+      t.title,
+      t.status,
+      t.priority,
+      t.due_date::text AS due_date,
+      t.created_at
+    FROM tasks AS t
+    INNER JOIN projects AS p
+      ON p.id = t.project_id
+      AND p.owner_id = ${userId}
+    WHERE t.project_id = ${projectId}
+      AND (${status}::text IS NULL OR t.status = ${status})
+      AND (${priority}::text IS NULL OR t.priority = ${priority})
+      AND (${searchPattern}::text IS NULL OR t.title ILIKE ${searchPattern})
+    ORDER BY t.created_at DESC
   `;
 
   return rows.map((row) => {
