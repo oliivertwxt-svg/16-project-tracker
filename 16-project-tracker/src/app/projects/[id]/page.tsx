@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
@@ -6,13 +7,36 @@ import { NewTaskForm } from "../../components/new-task-form";
 import { KanbanBoard } from "../../components/kanban-board";
 import { DeleteProjectButton } from "../../components/delete-project-button";
 
+type ProjectPageProps = {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+};
+
+export async function generateMetadata({
+  params,
+}: ProjectPageProps): Promise<Metadata> {
+  const { id } = await params;
+  const projectId = Number(id);
+
+  if (!Number.isInteger(projectId) || projectId <= 0) {
+    return { title: "Project not found" };
+  }
+
+  const project = await getProject(projectId);
+  if (!project) {
+    return { title: "Project not found" };
+  }
+
+  return {
+    title: project.name,
+    description: project.description || `Tasks for ${project.name}`,
+  };
+}
+
 export default async function ProjectPage({
   params,
   searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-}) {
+}: ProjectPageProps) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const projectId = Number(id);
 

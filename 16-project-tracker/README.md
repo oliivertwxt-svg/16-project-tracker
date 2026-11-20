@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Project Tracker
 
-## Getting Started
+A Next.js project and task tracker backed by Neon Postgres.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Create and delete projects and tasks.
+- View project progress and manage tasks on a three-column Kanban board.
+- Move tasks between To do, Doing, and Done with optimistic updates.
+- Filter tasks by priority and search titles.
+- See overall task statistics, per-project completion, and overdue tasks.
+
+## Stack
+
+- Next.js App Router with React Server and Client Components
+- TypeScript and Tailwind CSS
+- Neon Postgres via `@neondatabase/serverless`
+- Zod for validating form input and database rows
+
+## Architecture
+
+Read paths are implemented as Server Components that call typed functions in
+`src/lib/queries.ts`; those functions execute parameterized tagged-template
+queries through the Neon client in `src/lib/db.ts`. Server Components render
+project pages, Kanban data, and SQL-aggregated statistics.
+
+Writes go through Server Actions in `src/app/actions.ts`. Actions validate
+untrusted `FormData` with Zod, execute parameterized INSERT/UPDATE/DELETE
+statements, and revalidate affected routes. Client forms use `useActionState`,
+and the Kanban board uses `useOptimistic` for status changes.
+
+## Setup
+
+1. Create a Neon project at [neon.tech](https://neon.tech), then create a
+   database and copy its connection string.
+2. Create `.env.local` from the example:
+
+   ```powershell
+   Copy-Item .env.example .env.local
+   ```
+
+3. Set `DATABASE_URL` in `.env.local` to the Neon connection string. Keep this
+   value private and do not commit `.env.local`.
+4. Create the tables using the schema below.
+5. Install dependencies and start the development server:
+
+   ```powershell
+   npm install
+   npm run dev
+   ```
+
+   Open [http://localhost:3000](http://localhost:3000).
+
+Run checks with `npm run lint` and `npm run build`. A valid `DATABASE_URL` must
+be present when running the app.
+
+## Database schema
+
+The application expects a `projects` table and a `tasks` table with the
+following columns and constraints:
+
+```sql
+CREATE TABLE projects (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  color TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE tasks (
+  id SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('todo', 'doing', 'done')),
+  priority TEXT NOT NULL CHECK (priority IN ('low', 'medium', 'high')),
+  due_date DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`src/lib/queries.ts` contains the SELECT queries and aggregate statistics.
+`src/app/actions.ts` contains the validated writes.

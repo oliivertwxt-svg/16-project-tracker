@@ -1,17 +1,27 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import { getProjects } from "@/lib/queries";
 import { NewProjectForm } from "./components/new-project-form";
 
 export default async function Home() {
+  await connection();
   const projects = await getProjects();
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12">
-      <header className="mb-8">
-        <p className="text-sm font-medium text-zinc-500">Workspace</p>
-        <h1 className="mt-1 text-3xl font-bold tracking-tight text-zinc-950">
-          Projects
-        </h1>
+      <header className="mb-8 flex items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-zinc-500">Workspace</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-zinc-950">
+            Projects
+          </h1>
+        </div>
+        <Link
+          href="/stats"
+          className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-white"
+        >
+          Statistics
+        </Link>
       </header>
 
       <NewProjectForm />
