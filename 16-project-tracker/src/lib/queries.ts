@@ -31,6 +31,7 @@ export interface Task {
 export interface TaskFilters {
   status?: TaskStatus;
   priority?: TaskPriority;
+  q?: string;
 }
 
 const projectRowSchema = z.object({
@@ -115,41 +116,25 @@ export async function getTasks(
   projectId: number,
   filters: TaskFilters = {},
 ): Promise<Task[]> {
-  let rows;
-
-  if (filters.status && filters.priority) {
-    rows = await sql`
-      SELECT id, project_id, title, status, priority, due_date, created_at
-      FROM tasks
-      WHERE project_id = ${projectId}
-        AND status = ${filters.status}
-        AND priority = ${filters.priority}
-      ORDER BY created_at DESC
-    `;
-  } else if (filters.status) {
-    rows = await sql`
-      SELECT id, project_id, title, status, priority, due_date, created_at
-      FROM tasks
-      WHERE project_id = ${projectId}
-        AND status = ${filters.status}
-      ORDER BY created_at DESC
-    `;
-  } else if (filters.priority) {
-    rows = await sql`
-      SELECT id, project_id, title, status, priority, due_date, created_at
-      FROM tasks
-      WHERE project_id = ${projectId}
-        AND priority = ${filters.priority}
-      ORDER BY created_at DESC
-    `;
-  } else {
-    rows = await sql`
-      SELECT id, project_id, title, status, priority, due_date, created_at
-      FROM tasks
-      WHERE project_id = ${projectId}
-      ORDER BY created_at DESC
-    `;
-  }
+  const status = filters.status ?? null;
+  const priority = filters.priority ?? null;
+  const searchPattern = filters.q ? `%${filters.q}%` : null;
+  const rows = await sql`
+    SELECT
+      id,
+      project_id,
+      title,
+      status,
+      priority,
+      due_date::text AS due_date,
+      created_at
+    FROM tasks
+    WHERE project_id = ${projectId}
+      AND (${status}::text IS NULL OR status = ${status})
+      AND (${priority}::text IS NULL OR priority = ${priority})
+      AND (${searchPattern}::text IS NULL OR title ILIKE ${searchPattern})
+    ORDER BY created_at DESC
+  `;
 
   return rows.map((row) => {
     const parsed = taskRowSchema.parse(row);
