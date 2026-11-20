@@ -59,9 +59,57 @@ be present when running the app.
 ## Authentication
 
 GitHub sign-in is handled by Auth.js. Middleware redirects unauthenticated
-requests to `/login` and saves the requested path as `callbackUrl`. After
-GitHub redirects back to the Auth.js callback, the app verifies that the return
-path is relative before redirecting, then Auth.js issues the session cookie.
+requests to `/login` and saves the requested path as `callbackUrl`. The login
+page only accepts a relative callback path to prevent open redirects.
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | Neon Postgres connection string |
+| `AUTH_SECRET` | Secret used by Auth.js to sign and encrypt session data |
+| `AUTH_GITHUB_ID` | GitHub OAuth App client ID |
+| `AUTH_GITHUB_SECRET` | GitHub OAuth App client secret |
+
+Keep the values in `.env.local` private and never commit real credentials.
+
+### Create a GitHub OAuth App
+
+1. Open [GitHub Developer settings](https://github.com/settings/developers) and
+   choose **OAuth Apps** → **New OAuth App**.
+2. Enter an application name and set the homepage URL to
+   `http://localhost:3000`.
+3. Set the authorization callback URL to
+   `http://localhost:3000/api/auth/callback/github`, then register the app.
+4. Copy the app's client ID into `AUTH_GITHUB_ID` and generate a client secret
+   for `AUTH_GITHUB_SECRET` in `.env.local`.
+5. Generate `AUTH_SECRET` with `npx auth secret` or another cryptographically
+   secure random generator. For deployment, configure the production domain
+   and callback URL in the OAuth app and set the same environment variables in
+   the hosting provider.
+
+### OAuth flow
+
+```mermaid
+sequenceDiagram
+  actor User
+  participant Browser
+  participant App as Next.js and Auth.js
+  participant GitHub
+  participant Neon
+  User->>Browser: Choose Sign in with GitHub
+  Browser->>App: POST sign-in Server Action
+  App-->>Browser: Redirect to GitHub authorization
+  Browser->>GitHub: Authorize the app
+  GitHub-->>Browser: Redirect to /api/auth/callback/github with code
+  Browser->>App: GET callback with authorization code
+  App->>GitHub: Exchange code and fetch profile
+  GitHub-->>App: GitHub profile
+  App->>Neon: Upsert user by github_id
+  Neon-->>App: Return numeric users.id
+  App->>App: Add users.id to JWT session
+  App-->>Browser: Set session cookie and redirect to safe callbackUrl
+```
 
 Pages and data-changing Server Actions also call `requireUser()` themselves.
 Middleware is a useful first gate, but it is not an authorization boundary for
@@ -89,7 +137,7 @@ CREATE TABLE projects (
   name TEXT NOT NULL,
   description TEXT,
   color TEXT NOT NULL,
-  owner_id INTEGER NOT NULL REFERENCES users(id),
+  owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

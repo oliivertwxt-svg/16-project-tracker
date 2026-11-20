@@ -44,6 +44,12 @@ export async function UserMenu() {
           {session.user.name || "GitHub user"}
         </Link>
       </div>
+      <Link
+        href="/settings"
+        className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+      >
+        Settings
+      </Link>
       <form
         action={async () => {
           "use server";

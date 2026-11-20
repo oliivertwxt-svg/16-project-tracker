@@ -5,6 +5,7 @@ import { z } from "zod";
 import { sql } from "@/lib/db";
 import { ProjectInput, TaskInput, taskStatusSchema } from "@/lib/validation";
 import { requireUser } from "@/lib/session";
+import { signOut } from "@/auth";
 
 export type ActionResult = {
   ok: boolean;
@@ -203,4 +204,30 @@ export async function deleteProject(
   revalidatePath("/");
   revalidatePath(`/projects/${projectId.data}`);
   return { ok: true, errors: {}, message: "Project deleted" };
+}
+
+export type DeleteAccountState = {
+  error?: string;
+};
+
+export async function deleteAccount(
+  _previousState: DeleteAccountState,
+  formData: FormData,
+): Promise<DeleteAccountState> {
+  const { id: userId } = await requireUser();
+  if (formData.get("confirm_delete") !== "yes") {
+    return { error: "Confirm account deletion before continuing." };
+  }
+
+  const result = await sql`
+    DELETE FROM users
+    WHERE id = ${userId}
+    RETURNING id
+  `;
+  if (result.length === 0) {
+    return { error: "Your account could not be found." };
+  }
+
+  await signOut({ redirectTo: "/login?accountDeleted=1" });
+  return {};
 }
