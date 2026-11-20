@@ -6,6 +6,8 @@ import { getProject, getTasks } from "@/lib/queries";
 import { NewTaskForm } from "../../components/new-task-form";
 import { KanbanBoard } from "../../components/kanban-board";
 import { DeleteProjectButton } from "../../components/delete-project-button";
+import { auth } from "@/auth";
+import { redirect } from "next/navigation";
 
 type ProjectPageProps = {
   params: Promise<{ id: string }>;
@@ -15,6 +17,10 @@ type ProjectPageProps = {
 export async function generateMetadata({
   params,
 }: ProjectPageProps): Promise<Metadata> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { title: "Sign in" };
+  }
   const { id } = await params;
   const projectId = Number(id);
 
@@ -22,7 +28,7 @@ export async function generateMetadata({
     return { title: "Project not found" };
   }
 
-  const project = await getProject(projectId);
+  const project = await getProject(session.user.id, projectId);
   if (!project) {
     return { title: "Project not found" };
   }
@@ -37,6 +43,10 @@ export default async function ProjectPage({
   params,
   searchParams,
 }: ProjectPageProps) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const projectId = Number(id);
 
@@ -44,7 +54,7 @@ export default async function ProjectPage({
     notFound();
   }
 
-  const project = await getProject(projectId);
+  const project = await getProject(session.user.id, projectId);
   if (!project) {
     notFound();
   }
@@ -54,7 +64,7 @@ export default async function ProjectPage({
     .enum(["low", "medium", "high"])
     .safeParse(rawPriority);
   const searchQuery = typeof query.q === "string" ? query.q.trim().slice(0, 100) : "";
-  const tasks = await getTasks(projectId, {
+  const tasks = await getTasks(session.user.id, projectId, {
     priority: parsedPriority.success ? parsedPriority.data : undefined,
     q: searchQuery || undefined,
   });

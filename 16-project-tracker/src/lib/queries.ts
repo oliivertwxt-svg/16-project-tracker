@@ -121,22 +121,24 @@ const statsDetailRowSchema = z.discriminatedUnion("row_type", [
   }),
 ]);
 
-export async function getTrackerStats(): Promise<TrackerStats> {
+export async function getTrackerStats(ownerId: number): Promise<TrackerStats> {
   const [totalsRows, detailsRows] = await Promise.all([
     sql`
       SELECT
-        (SELECT COUNT(*) FROM projects)::int AS total_projects,
-        COUNT(*)::int AS total_tasks,
-        COUNT(*) FILTER (WHERE status = 'todo')::int AS todo_tasks,
-        COUNT(*) FILTER (WHERE status = 'doing')::int AS doing_tasks,
-        COUNT(*) FILTER (WHERE status = 'done')::int AS done_tasks,
-        COUNT(*) FILTER (WHERE priority = 'low')::int AS low_priority_tasks,
-        COUNT(*) FILTER (WHERE priority = 'medium')::int AS medium_priority_tasks,
-        COUNT(*) FILTER (WHERE priority = 'high')::int AS high_priority_tasks,
+        (SELECT COUNT(*) FROM projects WHERE owner_id = ${ownerId})::int AS total_projects,
+        COUNT(t.id)::int AS total_tasks,
+        COUNT(*) FILTER (WHERE t.status = 'todo')::int AS todo_tasks,
+        COUNT(*) FILTER (WHERE t.status = 'doing')::int AS doing_tasks,
+        COUNT(*) FILTER (WHERE t.status = 'done')::int AS done_tasks,
+        COUNT(*) FILTER (WHERE t.priority = 'low')::int AS low_priority_tasks,
+        COUNT(*) FILTER (WHERE t.priority = 'medium')::int AS medium_priority_tasks,
+        COUNT(*) FILTER (WHERE t.priority = 'high')::int AS high_priority_tasks,
         COUNT(*) FILTER (
-          WHERE due_date < CURRENT_DATE AND status <> 'done'
+          WHERE t.due_date < CURRENT_DATE AND t.status <> 'done'
         )::int AS overdue_tasks
-      FROM tasks
+      FROM tasks AS t
+      INNER JOIN projects AS p ON p.id = t.project_id
+      WHERE p.owner_id = ${ownerId}
     `,
     sql`
       SELECT
@@ -157,6 +159,7 @@ export async function getTrackerStats(): Promise<TrackerStats> {
         NULL::text AS due_date
       FROM projects AS p
       LEFT JOIN tasks AS t ON t.project_id = p.id
+      WHERE p.owner_id = ${ownerId}
       GROUP BY p.id, p.name
 
       UNION ALL
@@ -176,6 +179,7 @@ export async function getTrackerStats(): Promise<TrackerStats> {
       INNER JOIN projects AS p ON p.id = t.project_id
       WHERE t.due_date < CURRENT_DATE
         AND t.status <> 'done'
+        AND p.owner_id = ${ownerId}
       ORDER BY row_type, project_name, due_date
     `,
   ]);
@@ -217,7 +221,7 @@ export async function getTrackerStats(): Promise<TrackerStats> {
   };
 }
 
-export async function getProjects(): Promise<ProjectWithProgress[]> {
+export async function getProjects(ownerId: number): Promise<ProjectWithProgress[]> {
   const rows = await sql`
     SELECT
       p.id,
@@ -229,6 +233,7 @@ export async function getProjects(): Promise<ProjectWithProgress[]> {
       COUNT(t.id) FILTER (WHERE t.status = 'done') AS done_tasks
     FROM projects AS p
     LEFT JOIN tasks AS t ON t.project_id = p.id
+    WHERE p.owner_id = ${ownerId}
     GROUP BY p.id, p.name, p.description, p.color, p.created_at
     ORDER BY p.created_at DESC
   `;
@@ -247,11 +252,11 @@ export async function getProjects(): Promise<ProjectWithProgress[]> {
   });
 }
 
-export async function getProject(id: number): Promise<Project | null> {
+export async function getProject(ownerId: number, id: number): Promise<Project | null> {
   const rows = await sql`
     SELECT id, name, description, color, created_at
     FROM projects
-    WHERE id = ${id}
+    WHERE id = ${id} AND owner_id = ${ownerId}
     LIMIT 1
   `;
 
@@ -270,6 +275,7 @@ export async function getProject(id: number): Promise<Project | null> {
 }
 
 export async function getTasks(
+  ownerId: number,
   projectId: number,
   filters: TaskFilters = {},
 ): Promise<Task[]> {
@@ -287,6 +293,11 @@ export async function getTasks(
       created_at
     FROM tasks
     WHERE project_id = ${projectId}
+      AND EXISTS (
+        SELECT 1 FROM projects
+        WHERE projects.id = ${projectId}
+          AND projects.owner_id = ${ownerId}
+      )
       AND (${status}::text IS NULL OR status = ${status})
       AND (${priority}::text IS NULL OR priority = ${priority})
       AND (${searchPattern}::text IS NULL OR title ILIKE ${searchPattern})

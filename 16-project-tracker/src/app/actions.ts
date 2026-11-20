@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { sql } from "@/lib/db";
 import { ProjectInput, TaskInput, taskStatusSchema } from "@/lib/validation";
+import { auth } from "@/auth";
 
 export type ActionResult = {
   ok: boolean;
@@ -13,6 +14,14 @@ export type ActionResult = {
 
 const idSchema = z.coerce.number().int().positive();
 
+async function requireUserId(): Promise<number> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    throw new Error("You must be signed in");
+  }
+  return session.user.id;
+}
+
 function fieldErrors(error: z.ZodError): Record<string, string[]> {
   return error.flatten().fieldErrors as Record<string, string[]>;
 }
@@ -21,6 +30,7 @@ export async function createProject(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
+  const ownerId = await requireUserId();
   const parsed = ProjectInput.safeParse({
     name: formData.get("name"),
     description: formData.get("description"),
@@ -32,8 +42,8 @@ export async function createProject(
   }
 
   await sql`
-    INSERT INTO projects (name, description, color)
-    VALUES (${parsed.data.name}, ${parsed.data.description}, ${parsed.data.color})
+    INSERT INTO projects (name, description, color, owner_id)
+    VALUES (${parsed.data.name}, ${parsed.data.description}, ${parsed.data.color}, ${ownerId})
   `;
 
   revalidatePath("/");
@@ -44,6 +54,7 @@ export async function createTask(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
+  const ownerId = await requireUserId();
   const projectIdResult = idSchema.safeParse(formData.get("project_id"));
   const parsed = TaskInput.safeParse({
     title: formData.get("title"),
@@ -63,7 +74,9 @@ export async function createTask(
   }
 
   const projects = await sql`
-    SELECT id FROM projects WHERE id = ${projectIdResult.data} LIMIT 1
+    SELECT id FROM projects
+    WHERE id = ${projectIdResult.data} AND owner_id = ${ownerId}
+    LIMIT 1
   `;
   if (projects.length === 0) {
     return {
@@ -92,6 +105,7 @@ export async function updateTaskStatus(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
+  const ownerId = await requireUserId();
   const ids = z
     .object({
       task_id: idSchema,
@@ -115,6 +129,11 @@ export async function updateTaskStatus(
     SET status = ${status.data}
     WHERE id = ${ids.data.task_id}
       AND project_id = ${ids.data.project_id}
+      AND EXISTS (
+        SELECT 1 FROM projects
+        WHERE projects.id = ${ids.data.project_id}
+          AND projects.owner_id = ${ownerId}
+      )
     RETURNING id
   `;
 
@@ -134,6 +153,7 @@ export async function deleteTask(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
+  const ownerId = await requireUserId();
   const ids = z
     .object({
       task_id: idSchema,
@@ -152,6 +172,11 @@ export async function deleteTask(
     DELETE FROM tasks
     WHERE id = ${ids.data.task_id}
       AND project_id = ${ids.data.project_id}
+      AND EXISTS (
+        SELECT 1 FROM projects
+        WHERE projects.id = ${ids.data.project_id}
+          AND projects.owner_id = ${ownerId}
+      )
     RETURNING id
   `;
 
@@ -171,13 +196,24 @@ export async function deleteProject(
   _previousState: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
+  const ownerId = await requireUserId();
   const projectId = idSchema.safeParse(formData.get("project_id"));
 
   if (!projectId.success) {
     return { ok: false, errors: { project_id: ["Invalid project"] } };
   }
 
-  await sql`DELETE FROM projects WHERE id = ${projectId.data}`;
+  const result = await sql`
+    DELETE FROM projects
+    WHERE id = ${projectId.data} AND owner_id = ${ownerId}
+    RETURNING id
+  `;
+  if (result.length === 0) {
+    return {
+      ok: false,
+      errors: { project_id: ["Project does not belong to this user"] },
+    };
+  }
 
   revalidatePath("/");
   revalidatePath(`/projects/${projectId.data}`);

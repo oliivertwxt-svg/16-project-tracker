@@ -2,10 +2,16 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { getProjects } from "@/lib/queries";
 import { NewProjectForm } from "./components/new-project-form";
+import { auth } from "@/auth";
+import { redirect } from "next/navigation";
 
 export default async function Home() {
   await connection();
-  const projects = await getProjects();
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+  const projects = await getProjects(session.user.id);
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12">
